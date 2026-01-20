@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: video-compressor
+Version: 0.1.0
+Summary: Batch video compression CLI tool using FFmpeg
+Requires-Python: >=3.8
+Requires-Dist: click
+Requires-Dist: rich
