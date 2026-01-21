@@ -4,8 +4,9 @@ import shutil
 import platform
 import subprocess
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
+import shlex
 
 STATE_FILE_NAME = ".compression_state.json"
 
@@ -32,9 +33,11 @@ def format_date_for_filename(timestamp: float) -> str:
 
 def generate_output_filename(original_path: Path, created_ts: float) -> str:
     """
-    Generate new filename: YYYYMMDD-HHMMSS_{OriginalName}.mp4
+    Generate new filename: YYYYMMDD-HHMMSS[-0700]_{OriginalName}.mp4
     """
-    date_str = format_date_for_filename(created_ts)
+    # Use localized time for filename to include offset if available/relevant
+    dt = datetime.fromtimestamp(created_ts).astimezone()
+    date_str = dt.strftime("%Y%m%d-%H%M%S%z")
     stem = original_path.stem
     # Replace spaces with underscores or keep as is? User didn't specify, keeping safe.
     clean_stem = stem.replace(" ", "_")
@@ -85,11 +88,21 @@ def apply_dates_to_file(file_path: Path, created: float, modified: float):
     # 1. Set atime and mtime
     os.utime(file_path, (datetime.now().timestamp(), modified))
     
-    # 2. Try to set birthtime (macOS specific via setfile if available or simple utime fallback)
-    # Python doesn't have a cross-platform way to set birthtime easily.
-    # We will mainly rely on mtime which is the most visible "Date Modified".
-    
-    # On macOS we can try 'SetFile' if available, but os.utime handles 'Modified'.
-    # For 'Created', it's harder to spoof without calling system APIs.
-    # However, copying a file usually resets creation time to now.
-    pass
+    # 2. Try to set birthtime (macOS specific via setfile if available)
+    if platform.system() == 'Darwin':
+        try:
+            # SetFile expects format "MM/DD/YYYY HH:MM:SS"
+            # It interprets the string in LOCAL time.
+            # We must convert our timestamp to local system string representation.
+            dt_local = datetime.fromtimestamp(created)
+            date_str = dt_local.strftime("%m/%d/%Y %H:%M:%S")
+            
+            subprocess.run(
+                ["SetFile", "-d", date_str, str(file_path)], 
+                check=True, 
+                capture_output=True
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # Command failed or SetFile not found (requires Xcode command line tools)
+            # Fallback is to do nothing for birthtime, as we already set mtime.
+            pass

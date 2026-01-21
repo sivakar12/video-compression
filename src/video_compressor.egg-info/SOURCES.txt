@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+src/video_compressor/__init__.py
+src/video_compressor/compressor.py
+src/video_compressor/main.py
+src/video_compressor/utils.py
+src/video_compressor.egg-info/PKG-INFO
+src/video_compressor.egg-info/SOURCES.txt
+src/video_compressor.egg-info/dependency_links.txt
+src/video_compressor.egg-info/entry_points.txt
+src/video_compressor.egg-info/requires.txt
+src/video_compressor.egg-info/top_level.txt
