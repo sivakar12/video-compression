@@ -43,14 +43,16 @@ def compress_video(
         "-c:v", codec,
         "-crf", str(crf),
         "-preset", preset,
+        "-pix_fmt", "yuv420p",  # Ensure compatibility with QuickTime/macOS
         "-c:a", "copy",
         "-movflags", "+faststart",
-        str(output_path)
     ]
     
-    # If H.265, sometimes need to specify tag for compatibility
+    # If H.265, need to specify tag for compatibility (must be before output path)
     if codec == "libx265":
          cmd.extend(["-vtag", "hvc1"])
+
+    cmd.append(str(output_path))
 
     try:
         # Run ffmpeg. Capture output to avoid spamming terminal unless error
