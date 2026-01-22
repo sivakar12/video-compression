@@ -1,5 +1,7 @@
 import click
 import sys
+import time
+from datetime import timedelta
 from pathlib import Path
 from rich.console import Console
 from rich.prompt import Prompt, Confirm, IntPrompt
@@ -98,6 +100,7 @@ def cli(directory, codec, crf, preset):
 
     # 4. Processing Loop
     originals_dir = base_dir / "originals"
+    start_time = time.time()
     
     with Progress(
         SpinnerColumn(),
@@ -172,4 +175,6 @@ def cli(directory, codec, crf, preset):
             
             progress.advance(main_task)
             
+    elapsed_time = time.time() - start_time
     console.print("\n[bold green]Processing Complete![/bold green]")
+    console.print(f"[dim]Total time: {str(timedelta(seconds=int(elapsed_time)))}[/dim]")
