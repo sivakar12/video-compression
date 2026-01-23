@@ -1,6 +1,7 @@
 import click
 import sys
 import time
+import re
 from datetime import timedelta
 from pathlib import Path
 from rich.console import Console
@@ -125,12 +126,28 @@ def cli(directory, codec, crf, preset):
             
             # Compress
             try:
+                def update_ffmpeg_progress(line):
+                    # Parse interesting metrics from ffmpeg output
+                    # Example: frame=219 fps=0.0 q=-1.0 Lsize=1903kB time=00:00:07.82 bitrate=1991.6kbits/s speed=14.1x
+                    time_match = re.search(r"time=(\S+)", line)
+                    speed_match = re.search(r"speed=(\S+)", line)
+                    
+                    details = []
+                    if time_match:
+                        details.append(f"time={time_match.group(1)}")
+                    if speed_match:
+                        details.append(f"speed={speed_match.group(1)}")
+                        
+                    if details:
+                        progress.update(main_task, description=f"Processing {video_file.name} [{' '.join(details)}]")
+
                 success = compressor.compress_video(
                     video_file, 
                     output_path, 
                     codec=ffmpeg_codec, 
                     crf=crf, 
-                    preset=preset
+                    preset=preset,
+                    progress_callback=update_ffmpeg_progress
                 )
                 
                 if success:

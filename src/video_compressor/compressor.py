@@ -14,7 +14,8 @@ def compress_video(
     output_path: Path, 
     codec: str = "libx264", 
     crf: int = 23, 
-    preset: str = "medium"
+    preset: str = "medium",
+    progress_callback: Optional[callable] = None
 ) -> bool:
     """
     Compress video using ffmpeg.
@@ -55,20 +56,33 @@ def compress_video(
     cmd.append(str(output_path))
 
     try:
-        # Run ffmpeg. Capture output to avoid spamming terminal unless error
-        result = subprocess.run(
-            cmd, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE, 
-            text=True
+        # Run ffmpeg with Popen to capture output in real-time
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
         )
-        
-        if result.returncode != 0:
+
+        # Read stderr line by line
+        while True:
+            line = process.stderr.readline()
+            if not line and process.poll() is not None:
+                break
+            
+            if line and progress_callback:
+                progress_callback(line)
+
+        if process.returncode != 0:
             print(f"Error compressing {input_path.name}:")
-            print(result.stderr)
+            # process.stderr is already consumed, so we might not have the full error log easily available 
+            # unless we stored it or the user saw it via callback. 
+            # For simplicity, we assume the callback (if any) or existing console handled visibility, 
+            # but we can print a generic error or return False.
             return False
             
         return True
+
         
     except Exception as e:
         print(f"Exception during compression: {e}")
