@@ -135,10 +135,10 @@ def cli(directory, codec, crf, preset):
                 
                 if success:
                     # Apply Dates
-                        try:
-                            # Use created time for both creation and modification time
-                            utils.apply_dates_to_file(output_path, dates['created'], dates['created'])
-                        except Exception as e:
+                    try:
+                        # Use created time for both creation and modification time
+                        utils.apply_dates_to_file(output_path, dates['created'], dates['created'])
+                    except Exception as e:
                         console.print(f"[red]Error applying dates to {new_filename}: {e}[/red]")
                         console.print("[yellow]Rolling back...[/yellow]")
                         if output_path.exists():
