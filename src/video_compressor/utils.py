@@ -10,6 +10,19 @@ import shlex
 
 STATE_FILE_NAME = ".compression_state.json"
 
+def parse_duration_to_seconds(time_str: str) -> float:
+    """
+    Parse FFmpeg duration string (HH:MM:SS.mm) to seconds.
+    Example: '00:05:20.45' -> 320.45
+    """
+    try:
+        if not time_str:
+            return 0.0
+        h, m, s = time_str.split(':')
+        return int(h) * 3600 + int(m) * 60 + float(s)
+    except ValueError:
+        return 0.0
+
 def get_file_dates(file_path: Path) -> Dict[str, float]:
     """
     Get created (birthtime) and modified times of a file.

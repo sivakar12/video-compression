@@ -125,8 +125,19 @@ def cli(directory, codec, crf, preset):
             output_path = base_dir / new_filename
             
             # Compress
+            video_duration = 0.0
+            process_start_time = time.time()
+            
             try:
                 def update_ffmpeg_progress(line):
+                    nonlocal video_duration
+                    # Parse Duration if seen (usually at start)
+                    # Duration: 00:00:30.04, start: 0.000000, bitrate: 10453 kb/s
+                    if "Duration:" in line and video_duration == 0.0:
+                        dur_match = re.search(r"Duration:\s+(\d{2}:\d{2}:\d{2}\.\d{2})", line)
+                        if dur_match:
+                            video_duration = utils.parse_duration_to_seconds(dur_match.group(1))
+
                     # Parse interesting metrics from ffmpeg output
                     # Example: frame=219 fps=0.0 q=-1.0 Lsize=1903kB time=00:00:07.82 bitrate=1991.6kbits/s speed=14.1x
                     time_match = re.search(r"time=(\S+)", line)
@@ -151,6 +162,23 @@ def cli(directory, codec, crf, preset):
                 )
                 
                 if success:
+                    # Calculate Stats
+                    process_time = time.time() - process_start_time
+                    stats_msg = f"[dim]Completed in {str(timedelta(seconds=int(process_time)))}[/dim]"
+                    
+                    if video_duration > 0:
+                        # Efficiency: Time (seconds) to compress 1 minute of video
+                        # (process_time / video_duration_mins)
+                        video_minutes = video_duration / 60.0
+                        if video_minutes > 0:
+                            s_per_min = process_time / video_minutes
+                            speed_factor = video_duration / process_time if process_time > 0 else 0
+                            
+                            stats_msg += f"\n  [dim]• Efficiency: {s_per_min:.1f}s / min of video[/dim]"
+                            stats_msg += f"\n  [dim]• Speed: {speed_factor:.1f}x[/dim]"
+                    
+                    console.print(stats_msg)
+
                     # Apply Dates
                     try:
                         # Use created time for both creation and modification time
