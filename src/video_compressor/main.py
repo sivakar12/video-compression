@@ -20,7 +20,8 @@ VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm'}
 @click.option('--codec', type=click.Choice(['h264', 'h265']), help='Video codec to use')
 @click.option('--crf', type=int, help='Constant Rate Factor (Quality). Lower is better. 18-28 recommended.')
 @click.option('--preset', type=click.Choice(['fast', 'medium', 'slow']), default='medium', help='Compression speed preset')
-def cli(directory, codec, crf, preset):
+@click.option('--no-compress', is_flag=True, help='Rename and update timestamps ONLY. No compression. Files are NOT moved to originals.')
+def cli(directory, codec, crf, preset, no_compress):
     """
     Batch compress videos in DIRECTORY.
     
@@ -29,16 +30,17 @@ def cli(directory, codec, crf, preset):
     base_dir = Path(directory)
     
     # 0. Check dependencies
-    try:
-        compressor.check_ffmpeg()
-    except RuntimeError as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
-        sys.exit(1)
+    if not no_compress:
+        try:
+            compressor.check_ffmpeg()
+        except RuntimeError as e:
+            console.print(f"[bold red]Error:[/bold red] {e}")
+            sys.exit(1)
 
     console.rule("[bold blue]Video Compressor Tool[/bold blue]")
     
     # 1. Interactive Prompts if options not provided
-    if not codec:
+    if not no_compress and not codec:
         codec = questionary.select(
             "Choose Codec",
             choices=["h264", "h265"],
@@ -48,7 +50,7 @@ def cli(directory, codec, crf, preset):
         if not codec: # Handle cancellation
              sys.exit(0)
 
-    if not crf:
+    if not no_compress and not crf:
         default_crf = 23 if codec == 'h264' else 28 # h265 can tolerate higher CRF for same quality
         
         # Simple text input for CRF is usually fine, or could use a slider but text is standard for numbers
@@ -62,9 +64,12 @@ def cli(directory, codec, crf, preset):
              sys.exit(0)
         crf = int(crf_str)
         
-    ffmpeg_codec = "libx264" if codec == "h264" else "libx265"
-    
-    console.print(f"\n[green]Settings:[/green] Codec=[bold]{ffmpeg_codec}[/bold], CRF=[bold]{crf}[/bold], Preset=[bold]{preset}[/bold]\n")
+    ffmpeg_codec = "libx264"
+    if not no_compress:
+        ffmpeg_codec = "libx264" if codec == "h264" else "libx265"
+        console.print(f"\n[green]Settings:[/green] Codec=[bold]{ffmpeg_codec}[/bold], CRF=[bold]{crf}[/bold], Preset=[bold]{preset}[/bold]\n")
+    else:
+        console.print(f"\n[green]Mode:[/green] [bold]NO COMPRESSION[/bold] (Rename & Timestamp only)\n")
 
     # 2. Scan Files
     files = [
@@ -124,6 +129,42 @@ def cli(directory, codec, crf, preset):
             new_filename = utils.generate_output_filename(video_file, dates['created'])
             output_path = base_dir / new_filename
             
+            if no_compress:
+                try:
+                    progress.update(main_task, description=f"Renaming {video_file.name}")
+                    
+                    if output_path.exists():
+                        # Handle collision or skip?
+                        # If renamed file exists, maybe we already renamed it?
+                        console.print(f"[yellow]Target exists, skipping rename: {new_filename}[/yellow]")
+                        utils.update_file_state(base_dir, video_file.name, 'skipped_exists')
+                        progress.advance(main_task)
+                        continue
+
+                    # Rename
+                    video_file.rename(output_path)
+                    
+                    # Apply Dates
+                    try:
+                        utils.apply_dates_to_file(output_path, dates['created'], dates['created'])
+                    except Exception as e:
+                         console.print(f"[yellow]Warning: Could not set dates for {new_filename}: {e}[/yellow]")
+
+                    # Update state
+                    # Mark original name as done (so we don't process it if it somehow reappears or we track history)
+                    # AND Mark new name as done (so we don't re-rename it on next run)
+                    utils.update_file_state(base_dir, video_file.name, 'renamed')
+                    utils.update_file_state(base_dir, new_filename, 'done')
+                    
+                    console.print(f"[dim]Renamed: {video_file.name} -> {new_filename}[/dim]")
+
+                except Exception as e:
+                    console.print(f"[red]Error renaming {video_file.name}: {e}[/red]")
+                    utils.update_file_state(base_dir, video_file.name, 'error_renaming', str(e))
+                
+                progress.advance(main_task)
+                continue
+
             # Compress
             video_duration = 0.0
             process_start_time = time.time()
