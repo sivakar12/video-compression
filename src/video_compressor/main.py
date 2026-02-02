@@ -76,6 +76,32 @@ def cli(directory, codec, crf, preset, no_compress):
         f for f in base_dir.iterdir() 
         if f.suffix.lower() in VIDEO_EXTENSIONS and not f.name.startswith('.')
     ]
+
+    # Filter out files that appear to be generated outputs
+    # Logic: If a file looks like "Timestamp_Name.mp4" AND "Name.mp4" exists in "originals", skip it.
+    originals_dir = base_dir / "originals"
+    processed_stems = set()
+    if originals_dir.exists():
+        for orig in originals_dir.iterdir():
+            if not orig.name.startswith('.'):
+                # We need to match the clean stem logic from utils.py
+                processed_stems.add(orig.stem.replace(" ", "_"))
+
+    valid_files = []
+    for f in files:
+        # Check if file matches generated pattern: YYYYMMDD-HHMMSS..._Stem
+        match = re.match(r"^\d{8}-\d{6}.*?_(.+)$", f.stem)
+        is_generated = False
+        if match:
+             potential_stem = match.group(1)
+             if potential_stem in processed_stems:
+                 is_generated = True
+        
+        if not is_generated:
+            valid_files.append(f)
+    
+    files = valid_files
+
     if not files:
         console.print("[yellow]No video files found in directory.[/yellow]")
         return
