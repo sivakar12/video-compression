@@ -96,9 +96,10 @@ def compress_video(
     cmd.extend(ffmpeg_args)
     
     cmd.extend([
+        "-map_metadata", "0",
         "-pix_fmt", "yuv420p",  # Compatibility
         "-c:a", "copy",
-        "-movflags", "+faststart",
+        "-movflags", "+faststart+use_metadata_tags",
         str(output_path)
     ])
 
