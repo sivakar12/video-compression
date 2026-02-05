@@ -15,6 +15,7 @@ def compress_video(
     codec: str = "libx264", 
     crf: int = 23, 
     preset: str = "medium",
+    hw_accel: bool = False,
     progress_callback: Optional[callable] = None
 ) -> bool:
     """
@@ -23,37 +24,83 @@ def compress_video(
     Args:
         input_path: Source video file
         output_path: Destination file
-        codec: 'libx264' (default) or 'libx265'
-        crf: Constant Rate Factor (18-28 is good range, lower is better quality)
-        preset: Encoding speed (faster = larger file/worse quality for same bitrat)
+        codec: 'libx264'/'libx265' (software) OR 'h264'/'h265' (abstract, triggers conversion if hw_accel=True)
+        crf: Constant Rate Factor (software) or base for Quality conversion (hardware)
+        preset: Encoding speed (software only)
+        hw_accel: Use VideoToolbox hardware acceleration if available
     
     Returns:
         True if successful, False otherwise.
     """
-    # Base command
-    # -i input
-    # -c:v codec -crf X -preset Y
-    # -c:a copy (copy audio without re-encoding to save quality/time)
-    # -movflags +faststart (optimizes for web/streaming)
-    # -y (overwrite output if exists, though our logic handles this outside)
-    
+    # Determine Codec and Quality Settings
+    ffmpeg_codec = codec
+    ffmpeg_args = []
+
+    if hw_accel:
+        # Hardware Acceleration (VideoToolbox)
+        if "h265" in codec or "hevc" in codec or "libx265" in codec:
+            ffmpeg_codec = "hevc_videotoolbox"
+            tag = "hvc1"
+        else: # Default to h264
+            ffmpeg_codec = "h264_videotoolbox"
+            tag = None
+
+        # Map CRF to VideoToolbox Quality (0-100)
+        # CRF 23 (approx default) -> ~65
+        # Formula: 100 - (crf * 1.5)
+        # 18 -> 73 (High Qual)
+        # 23 -> 65.5 (Medium)
+        # 28 -> 58 (Lower Qual)
+        quality_score = max(1, min(100, int(100 - (crf * 1.5))))
+        
+        ffmpeg_args.extend([
+            "-c:v", ffmpeg_codec,
+            "-q:v", str(quality_score)
+             # Note: VideoToolbox doesn't use -preset typically, or uses -realtime
+             # We rely on -q:v for quality/size tradeoff
+        ])
+        
+        if tag:
+             ffmpeg_args.extend(["-vtag", tag])
+
+    else:
+        # Software Encoding (CPU)
+        # Normalize input codec string if needed
+        if "h265" in codec or "hevc" in codec:
+             ffmpeg_codec = "libx265"
+             tag = "hvc1"
+        elif "h264" in codec:
+             ffmpeg_codec = "libx264"
+             tag = None
+        else:
+             ffmpeg_codec = codec # Assume it's already a valid ffmpeg codec name like libx264
+             tag = None # Unknown
+             if codec == "libx265": tag = "hvc1"
+
+        ffmpeg_args.extend([
+            "-c:v", ffmpeg_codec,
+            "-crf", str(crf),
+            "-preset", preset
+        ])
+        
+        if tag and ffmpeg_codec == "libx265":
+             ffmpeg_args.extend(["-vtag", tag])
+
+    # Base command construction
     cmd = [
         "ffmpeg",
         "-y",
-        "-i", str(input_path),
-        "-c:v", codec,
-        "-crf", str(crf),
-        "-preset", preset,
-        "-pix_fmt", "yuv420p",  # Ensure compatibility with QuickTime/macOS
-        "-c:a", "copy",
-        "-movflags", "+faststart",
+        "-i", str(input_path)
     ]
     
-    # If H.265, need to specify tag for compatibility (must be before output path)
-    if codec == "libx265":
-         cmd.extend(["-vtag", "hvc1"])
-
-    cmd.append(str(output_path))
+    cmd.extend(ffmpeg_args)
+    
+    cmd.extend([
+        "-pix_fmt", "yuv420p",  # Compatibility
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        str(output_path)
+    ])
 
     try:
         # Run ffmpeg with Popen to capture output in real-time
@@ -74,16 +121,12 @@ def compress_video(
                 progress_callback(line)
 
         if process.returncode != 0:
-            print(f"Error compressing {input_path.name}:")
-            # process.stderr is already consumed, so we might not have the full error log easily available 
-            # unless we stored it or the user saw it via callback. 
-            # For simplicity, we assume the callback (if any) or existing console handled visibility, 
-            # but we can print a generic error or return False.
+            # We can't print stderr here easily as it was consumed. 
+            # Ideally we'd log it or accumulate last few lines.
             return False
             
         return True
 
-        
     except Exception as e:
         print(f"Exception during compression: {e}")
         return False

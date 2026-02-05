@@ -2,6 +2,7 @@ import click
 import sys
 import time
 import re
+import platform
 from datetime import timedelta
 from pathlib import Path
 from rich.console import Console
@@ -20,8 +21,9 @@ VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm'}
 @click.option('--codec', type=click.Choice(['h264', 'h265']), help='Video codec to use')
 @click.option('--crf', type=int, help='Constant Rate Factor (Quality). Lower is better. 18-28 recommended.')
 @click.option('--preset', type=click.Choice(['fast', 'medium', 'slow']), default='medium', help='Compression speed preset')
+@click.option('--hw-accel/--no-hw-accel', default=None, help='Use Hardware Acceleration (VideoToolbox) if available')
 @click.option('--no-compress', is_flag=True, help='Rename and update timestamps ONLY. No compression. Files are NOT moved to originals.')
-def cli(directory, codec, crf, preset, no_compress):
+def cli(directory, codec, crf, preset, hw_accel, no_compress):
     """
     Batch compress videos in DIRECTORY.
     
@@ -42,32 +44,53 @@ def cli(directory, codec, crf, preset, no_compress):
     # 1. Interactive Prompts if options not provided
     if not no_compress and not codec:
         codec = questionary.select(
-            "Choose Codec",
+            "Video Codec:",
             choices=["h264", "h265"],
-            default="h264"
+            default="h264",
+            qmark="?"
         ).ask()
         
         if not codec: # Handle cancellation
              sys.exit(0)
 
     if not no_compress and not crf:
-        default_crf = 23 if codec == 'h264' else 28 # h265 can tolerate higher CRF for same quality
+        default_crf = 23 if codec == 'h264' else 28
         
-        # Simple text input for CRF is usually fine, or could use a slider but text is standard for numbers
         crf_str = questionary.text(
-            "Choose Quality (CRF)",
+            "Quality (CRF):",
             default=str(default_crf),
-            validate=lambda text: text.isdigit() and 0 <= int(text) <= 51 or "Please enter a valid CRF (0-51)"
+            validate=lambda text: text.isdigit() and 0 <= int(text) <= 51 or "Please enter a valid CRF (0-51)",
+            qmark="?"
         ).ask()
         
         if not crf_str:
              sys.exit(0)
         crf = int(crf_str)
-        
-    ffmpeg_codec = "libx264"
+
+    # Determine HW Accel if not specified (Interactive or Default)
+    if not no_compress and hw_accel is None:
+        is_macos = platform.system() == 'Darwin'
+        if is_macos:
+             hw_accel = questionary.confirm(
+                 "Use Hardware Acceleration (VideoToolbox)?",
+                 default=True,
+                 qmark="?",
+                 auto_enter=False,
+             ).ask()
+        else:
+             hw_accel = False
+
+    ffmpeg_codec_display = "libx264"
     if not no_compress:
-        ffmpeg_codec = "libx264" if codec == "h264" else "libx265"
-        console.print(f"\n[green]Settings:[/green] Codec=[bold]{ffmpeg_codec}[/bold], CRF=[bold]{crf}[/bold], Preset=[bold]{preset}[/bold]\n")
+        if hw_accel:
+             base = "h265" if codec == "h265" else "h264"
+             ffmpeg_codec_display = f"{base}_videotoolbox (HW)"
+             quality_display = f"Quality ~{int(100 - (crf * 1.5))}"
+        else:
+             ffmpeg_codec_display = "libx265" if codec == "h265" else "libx264"
+             quality_display = f"CRF {crf}"
+             
+        console.print(f"\n[green]Settings:[/green] Codec=[bold]{ffmpeg_codec_display}[/bold], Quality=[bold]{quality_display}[/bold], Preset=[bold]{preset}[/bold]\n")
     else:
         console.print(f"\n[green]Mode:[/green] [bold]NO COMPRESSION[/bold] (Rename & Timestamp only)\n")
 
@@ -222,9 +245,10 @@ def cli(directory, codec, crf, preset, no_compress):
                 success = compressor.compress_video(
                     video_file, 
                     output_path, 
-                    codec=ffmpeg_codec, 
+                    codec=codec, # Pass abstract codec directly, compressor handles mapping
                     crf=crf, 
                     preset=preset,
+                    hw_accel=bool(hw_accel),
                     progress_callback=update_ffmpeg_progress
                 )
                 
