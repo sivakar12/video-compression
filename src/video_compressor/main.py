@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.prompt import Prompt, Confirm, IntPrompt
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 import questionary
+from wakepy import keep
 
 from . import utils, compressor
 
@@ -157,7 +158,7 @@ def cli(directory, codec, crf, preset, hw_accel, no_compress):
     originals_dir = base_dir / "originals"
     start_time = time.time()
     
-    with Progress(
+    with keep.running() as k, Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),

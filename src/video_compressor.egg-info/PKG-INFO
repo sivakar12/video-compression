@@ -6,3 +6,4 @@ Requires-Python: >=3.8
 Requires-Dist: click
 Requires-Dist: rich
 Requires-Dist: questionary
+Requires-Dist: wakepy
