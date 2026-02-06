@@ -26,6 +26,7 @@ def parse_duration_to_seconds(time_str: str) -> float:
 def get_file_dates(file_path: Path) -> Dict[str, float]:
     """
     Get created (birthtime) and modified times of a file.
+    Returns the earliest of both as the 'created' timestamp.
     On macOS, explicitly tries to get creation time.
     """
     stat = file_path.stat()
@@ -37,7 +38,10 @@ def get_file_dates(file_path: Path) -> Dict[str, float]:
     if hasattr(stat, 'st_birthtime'):
         created = stat.st_birthtime
     
-    return {'created': created, 'modified': modified}
+    # Use the earliest of creation and modification time
+    earliest = min(created, modified)
+    
+    return {'created': earliest, 'modified': modified}
 
 def format_date_for_filename(timestamp: float) -> str:
     """Format timestamp into YYYYMMDD-HHMMSS string."""
