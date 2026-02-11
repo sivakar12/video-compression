@@ -3,16 +3,17 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "video-compressor"
-version = "0.1.0"
-description = "Batch video compression CLI tool using FFmpeg"
+name = "organising-tools"
+version = "0.2.0"
+description = "All-in-one organising tool CLI"
 requires-python = ">=3.8"
 dependencies = [
     "click",
     "rich",  # For pretty progress bars and logging
     "questionary", # For interactive menus
     "wakepy",  # Cross-platform sleep prevention
+    "Pillow",  # For image compression
 ]
 
 [project.scripts]
-video-compress = "video_compressor.main:cli"
+organising-tools = "organising_tools.cli:cli"

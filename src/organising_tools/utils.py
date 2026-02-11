@@ -23,25 +23,92 @@ def parse_duration_to_seconds(time_str: str) -> float:
     except ValueError:
         return 0.0
 
+from PIL import Image, UnidentifiedImageError
+try:
+    from PIL.ExifTags import TAGS
+except ImportError:
+    TAGS = {}
+
+def get_metadata_date(file_path: Path) -> Optional[float]:
+    """
+    Try to extract creation date from file metadata (EXIF for images, FFmpeg for videos).
+    Returns timestamp or None.
+    """
+    ext = file_path.suffix.lower()
+    
+    # 1. Images (EXIF)
+    if ext in {'.jpg', '.jpeg', '.png', '.tiff', '.heic', '.webp'}:
+        try:
+            with Image.open(file_path) as img:
+                exif = img.getexif()
+                if exif:
+                    # Look for DateTimeOriginal (36867) or DateTime (306)
+                    # 36867 = DateTimeOriginal
+                    # 36868 = DateTimeDigitized
+                    # 306 = DateTime
+                    for tag_id in [36867, 36868, 306]:
+                        date_str = exif.get(tag_id)
+                        if date_str:
+                            try:
+                                # Format: "YYYY:MM:DD HH:MM:SS"
+                                dt = datetime.strptime(date_str, "%Y:%m:%d %H:%M:%S")
+                                return dt.timestamp()
+                            except ValueError:
+                                continue
+        except (UnidentifiedImageError, OSError, Exception):
+            pass
+
+    # 2. Videos (FFmpeg)
+    # Using ffprobe to get creation_time tag
+    if ext in {'.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm'}:
+        try:
+            cmd = [
+                "ffprobe", "-v", "quiet", 
+                "-select_streams", "v:0", 
+                "-show_entries", "stream_tags=creation_time:format_tags=creation_time", 
+                "-of", "default=noprint_wrappers=1:nokey=1", 
+                str(file_path)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            date_str = result.stdout.strip()
+            if date_str:
+                # FFmpeg returns ISO format usually: 2023-01-01T12:00:00.000000Z
+                try:
+                    # Handle Z or offset
+                    dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    return dt.timestamp()
+                except ValueError:
+                    pass
+        except Exception:
+            pass
+            
+    return None
+
 def get_file_dates(file_path: Path) -> Dict[str, float]:
     """
     Get created (birthtime) and modified times of a file.
-    Returns the earliest of both as the 'created' timestamp.
-    On macOS, explicitly tries to get creation time.
+    Also checks metadata content for earliest date.
+    Returns dictionary with 'created' being the absolute earliest found.
     """
     stat = file_path.stat()
-    created = stat.st_ctime
-    modified = stat.st_mtime
+    fs_created = stat.st_ctime
+    fs_modified = stat.st_mtime
     
     # On Mac/BSD/Windows, st_birthtime might be available for creation time
-    # On Linux st_birthtime is often not available, falls back to st_ctime (metadata change)
     if hasattr(stat, 'st_birthtime'):
-        created = stat.st_birthtime
+        fs_created = stat.st_birthtime
     
-    # Use the earliest of creation and modification time
-    earliest = min(created, modified)
+    # Check metadata
+    meta_date = get_metadata_date(file_path)
     
-    return {'created': earliest, 'modified': modified}
+    candidates = [fs_created, fs_modified]
+    if meta_date:
+        candidates.append(meta_date)
+    
+    # Use the earliest of all available dates
+    earliest = min(candidates)
+    
+    return {'created': earliest, 'modified': fs_modified, 'fs_created': fs_created, 'metadata': meta_date}
 
 def format_date_for_filename(timestamp: float) -> str:
     """Format timestamp into YYYYMMDD-HHMMSS string."""
@@ -58,7 +125,8 @@ def generate_output_filename(original_path: Path, created_ts: float) -> str:
     stem = original_path.stem
     # Replace spaces with underscores or keep as is? User didn't specify, keeping safe.
     clean_stem = stem.replace(" ", "_")
-    return f"{date_str}_{clean_stem}.mp4"
+    suffix = original_path.suffix
+    return f"{date_str}_{clean_stem}{suffix}"
 
 def load_state(directory: Path) -> Dict[str, Any]:
     """Load processing state from the directory."""

@@ -11,7 +11,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 import questionary
 from wakepy import keep
 
-from . import utils, compressor
+from .. import utils, compressor
 
 console = Console()
 
@@ -24,7 +24,7 @@ VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm'}
 @click.option('--preset', type=click.Choice(['fast', 'medium', 'slow']), default='medium', help='Compression speed preset')
 @click.option('--hw-accel/--no-hw-accel', default=None, help='Use Hardware Acceleration (VideoToolbox) if available')
 @click.option('--no-compress', is_flag=True, help='Rename and update timestamps ONLY. No compression. Files are NOT moved to originals.')
-def cli(directory, codec, crf, preset, hw_accel, no_compress):
+def compress(directory, codec, crf, preset, hw_accel, no_compress):
     """
     Batch compress videos in DIRECTORY.
     

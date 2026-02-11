@@ -1,51 +1,79 @@
-# Video Compressor User Guide
+# Organising Tools User Guide
 
-## Usage
-Run the tool on a directory containing videos:
-```bash
-video-compress /path/to/videos
-```
+A collection of CLI tools to help organize, compress, and managing your digital files (videos, images).
 
-## Output Format
-Files are always renamed to match their original creation timestamp:
-
-**Format:** `YYYYMMDD-HHMMSS-Offset_OriginalName.mp4`
-
-**Examples:**
-- `20240124-143000-0800_Holiday.mp4` (Recorded Jan 24, 2024 at 2:30 PM PST)
-- `20231225-090000+0530_Family.mp4` (Recorded Dec 25, 2023 at 9:00 AM IST)
-
-## Settings Explained
-
-### Codec (`--codec`)
-Determines the video format.
-- **h264**: Standard compatibility. Plays on everything (older TVs, Windows, Mac).
-- **h265**: High efficiency. Smaller files (30-50% smaller than h264) but requires modern hardware to play smoothly.
-
-### Quality CRF (`--crf`)
-**Constant Rate Factor**. Controls the balance between quality and file size.
-- **Range**: 0-51 (Lower is better quality, higher is smaller size).
-- **Recommended**: 
-  - **23** (Default for h264): Visually lossless.
-  - **28** (Default for h265): Good balance for archiving.
-  - **18**: Archival quality (very large files).
-
-### Preset (`--preset`)
-Controls compression speed vs efficiency.
-- **fast**: Quicker processing, slightly larger files.
-- **medium**: (Default) Best balance.
-- **slow**: Takes longer, produces slightly smaller files.
-
-## Organization Only Mode (`--no-compress`)
-Use this flag to **rename and organize only**, without compressing the video.
+## Installation
 
 ```bash
-video-compress /path/to/videos --no-compress
+pip install -e .
 ```
 
-**What it does:**
-1. **Renames** file to `YYYYMMDD-HHMMSS-Offset_OriginalName.mp4`.
-   - Example: `20240124-163000+0530_MyVideo.mp4`
-   - Represents: Year Month Day - Hour Minute Second TimezoneOffset
-2. **Updates** "Created" and "Modified" timestamps to match the original recording time.
-3. **Does NOT** move the file to an `originals` folder.
+The main command is `organising-tools`.
+
+## Commands
+
+### 1. Video Compression
+Batch compress and organize video files.
+
+```bash
+organising-tools compress /path/to/videos
+```
+
+**Options:**
+- `--codec [h264|h265]`: Choose video codec.
+- `--crf [0-51]`: Constant Rate Factor (Quality). Lower is better. Recommended: 23 (h264), 28 (h265).
+- `--preset [fast|medium|slow]`: Compression speed.
+- `--hw-accel`: Use hardware acceleration (VideoToolbox on macOS).
+- `--no-compress`: Rename and fix timestamps only.
+
+### 2. Image Compression
+Optimize images (JPEG/PNG/WebP) without visual quality loss.
+
+```bash
+organising-tools compress-image /path/to/images
+```
+
+**Features:**
+- Preserves EXIF metadata.
+- Optimizes file size using best available settings.
+- Moves originals to `originals/` folder.
+
+### 3. Date Fixing
+Tools to synchronize file timestamps (Created/Modified) with metadata.
+
+**Sync Modified Date:**
+Sets the file's "Modified" timestamp to the earliest valid date found (Metadata or Creation time).
+```bash
+organising-tools fix-modified-dates /path/to/files
+```
+
+**Sync Created Date:**
+Sets the file's "Created" timestamp (Birthtime) to the earliest valid date found.
+```bash
+organising-tools fix-created-dates /path/to/files
+```
+
+**Add Timestamp to Filename:**
+Renames files to include `YYYYMMDD-HHMMSS` prefix based on creation time.
+```bash
+organising-tools add-timestamp-to-filename /path/to/files
+```
+
+### 4. Folder Favorites
+Quickly navigate to frequently used directories.
+
+**Add Current Folder:**
+```bash
+organising-tools add-folder-to-favourites
+```
+
+**Go To Favorite:**
+Select a favorite folder interactively.
+```bash
+organising-tools go-to-favourite-folder
+```
+*Note: To actually change your shell directory, add this alias to your `.zshrc` or `.bashrc`:*
+```bash
+alias fav='cd "$(organising-tools go-to-favourite-folder --print-only)"'
+```
+Then use `fav` command.
