@@ -15,5 +15,10 @@ dependencies = [
     "Pillow",  # For image compression
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
 [project.scripts]
 organising-tools = "organising_tools.cli:cli"
