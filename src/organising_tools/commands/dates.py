@@ -47,7 +47,7 @@ def fix_modified_dates(directory, dry_run):
     table.add_column("Current Modified", style="red")
     table.add_column("Earliest (New)", style="green")
     
-    for item in files_to_change:
+    for item in sorted(files_to_change, key=lambda x: x['path'].name):
         curr_str = datetime.fromtimestamp(item['current']).strftime("%Y-%m-%d %H:%M:%S")
         new_str = datetime.fromtimestamp(item['new']).strftime("%Y-%m-%d %H:%M:%S")
         table.add_row(item['path'].name, curr_str, new_str)
@@ -119,7 +119,7 @@ def fix_created_dates(directory, dry_run):
     table.add_column("Current Created", style="red")
     table.add_column("Earliest (New)", style="green")
 
-    for item in files_to_change:
+    for item in sorted(files_to_change, key=lambda x: x['path'].name):
         curr_str = datetime.fromtimestamp(item['current']).strftime("%Y-%m-%d %H:%M:%S")
         new_str = datetime.fromtimestamp(item['new']).strftime("%Y-%m-%d %H:%M:%S")
         table.add_row(item['path'].name, curr_str, new_str)
