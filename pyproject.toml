@@ -13,6 +13,7 @@ dependencies = [
     "questionary", # For interactive menus
     "wakepy",  # Cross-platform sleep prevention
     "Pillow",  # For image compression
+    "exifread",  # For robust EXIF metadata reading (JPEG, HEIC, RAW, etc.)
 ]
 
 [project.optional-dependencies]

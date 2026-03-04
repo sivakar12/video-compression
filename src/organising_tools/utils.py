@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 import shlex
+import exifread
 
 STATE_FILE_NAME = ".compression_state.json"
 
@@ -24,10 +25,6 @@ def parse_duration_to_seconds(time_str: str) -> float:
         return 0.0
 
 from PIL import Image, UnidentifiedImageError
-try:
-    from PIL.ExifTags import TAGS
-except ImportError:
-    TAGS = {}
 
 def get_metadata_date(file_path: Path) -> Optional[float]:
     """
@@ -36,26 +33,28 @@ def get_metadata_date(file_path: Path) -> Optional[float]:
     """
     ext = file_path.suffix.lower()
     
-    # 1. Images (EXIF)
-    if ext in {'.jpg', '.jpeg', '.png', '.tiff', '.heic', '.webp'}:
+    # 1. Images (EXIF) — using exifread for robust support across
+    #    JPEG, PNG, WebP, HEIC, TIFF, and RAW formats.
+    image_exts = {
+        '.jpg', '.jpeg', '.png', '.tiff', '.tif', '.heic', '.heif', '.webp',
+        # RAW formats
+        '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2', '.raf', '.srw',
+    }
+    if ext in image_exts:
         try:
-            with Image.open(file_path) as img:
-                exif = img.getexif()
-                if exif:
-                    # Look for DateTimeOriginal (36867) or DateTime (306)
-                    # 36867 = DateTimeOriginal
-                    # 36868 = DateTimeDigitized
-                    # 306 = DateTime
-                    for tag_id in [36867, 36868, 306]:
-                        date_str = exif.get(tag_id)
-                        if date_str:
-                            try:
-                                # Format: "YYYY:MM:DD HH:MM:SS"
-                                dt = datetime.strptime(date_str, "%Y:%m:%d %H:%M:%S")
-                                return dt.timestamp()
-                            except ValueError:
-                                continue
-        except (UnidentifiedImageError, OSError, Exception):
+            with open(file_path, 'rb') as f:
+                tags = exifread.process_file(f, stop_tag='DateTimeDigitized', details=False)
+            
+            # Try tags in priority order: camera date > digitized date > general date
+            for tag_name in ['EXIF DateTimeOriginal', 'EXIF DateTimeDigitized', 'Image DateTime']:
+                tag_val = tags.get(tag_name)
+                if tag_val:
+                    try:
+                        dt = datetime.strptime(str(tag_val), "%Y:%m:%d %H:%M:%S")
+                        return dt.timestamp()
+                    except ValueError:
+                        continue
+        except Exception:
             pass
 
     # 2. Videos (FFmpeg)
@@ -101,12 +100,21 @@ def get_file_dates(file_path: Path) -> Dict[str, float]:
     # Check metadata
     meta_date = get_metadata_date(file_path)
     
-    candidates = [fs_created, fs_modified]
-    if meta_date:
-        candidates.append(meta_date)
+    # For images with camera EXIF data, the camera date is the authoritative source.
+    # Filesystem dates can be wrong due to copying, syncing, etc.
+    ext = file_path.suffix.lower()
+    image_extensions = {
+        '.jpg', '.jpeg', '.png', '.tiff', '.tif', '.heic', '.heif', '.webp',
+        '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2', '.raf', '.srw',
+    }
     
-    # Use the earliest of all available dates
-    earliest = min(candidates)
+    if ext in image_extensions and meta_date is not None:
+        earliest = meta_date
+    else:
+        candidates = [fs_created, fs_modified]
+        if meta_date:
+            candidates.append(meta_date)
+        earliest = min(candidates)
     
     return {'created': earliest, 'modified': fs_modified, 'fs_created': fs_created, 'metadata': meta_date}
 
