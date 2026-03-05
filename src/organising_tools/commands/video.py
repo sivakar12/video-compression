@@ -23,8 +23,7 @@ VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm'}
 @click.option('--crf', type=int, help='Constant Rate Factor (Quality). Lower is better. 18-28 recommended.')
 @click.option('--preset', type=click.Choice(['fast', 'medium', 'slow']), default='medium', help='Compression speed preset')
 @click.option('--hw-accel/--no-hw-accel', default=None, help='Use Hardware Acceleration (VideoToolbox) if available')
-@click.option('--no-compress', is_flag=True, help='Rename and update timestamps ONLY. No compression. Files are NOT moved to originals.')
-def compress_videos(directory, codec, crf, preset, hw_accel, no_compress):
+def compress_videos(directory, codec, crf, preset, hw_accel):
     """
     Batch compress videos in DIRECTORY.
     
@@ -33,17 +32,16 @@ def compress_videos(directory, codec, crf, preset, hw_accel, no_compress):
     base_dir = Path(directory)
     
     # 0. Check dependencies
-    if not no_compress:
-        try:
-            compressor.check_ffmpeg()
-        except RuntimeError as e:
-            console.print(f"[bold red]Error:[/bold red] {e}")
-            sys.exit(1)
+    try:
+        compressor.check_ffmpeg()
+    except RuntimeError as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        sys.exit(1)
 
     console.rule("[bold blue]Video Compressor Tool[/bold blue]")
     
     # 1. Interactive Prompts if options not provided
-    if not no_compress and not codec:
+    if not codec:
         codec = questionary.select(
             "Video Codec:",
             choices=["h264", "h265"],
@@ -54,7 +52,7 @@ def compress_videos(directory, codec, crf, preset, hw_accel, no_compress):
         if not codec: # Handle cancellation
              sys.exit(0)
 
-    if not no_compress and not crf:
+    if not crf:
         default_crf = 23 if codec == 'h264' else 28
         
         crf_str = questionary.text(
@@ -69,7 +67,7 @@ def compress_videos(directory, codec, crf, preset, hw_accel, no_compress):
         crf = int(crf_str)
 
     # Determine HW Accel if not specified (Interactive or Default)
-    if not no_compress and hw_accel is None:
+    if hw_accel is None:
         is_macos = platform.system() == 'Darwin'
         if is_macos:
              hw_accel = questionary.confirm(
@@ -81,50 +79,21 @@ def compress_videos(directory, codec, crf, preset, hw_accel, no_compress):
         else:
              hw_accel = False
 
-    ffmpeg_codec_display = "libx264"
-    if not no_compress:
-        if hw_accel:
-             base = "h265" if codec == "h265" else "h264"
-             ffmpeg_codec_display = f"{base}_videotoolbox (HW)"
-             quality_display = f"Quality ~{int(100 - (crf * 1.5))}"
-        else:
-             ffmpeg_codec_display = "libx265" if codec == "h265" else "libx264"
-             quality_display = f"CRF {crf}"
-             
-        console.print(f"\n[green]Settings:[/green] Codec=[bold]{ffmpeg_codec_display}[/bold], Quality=[bold]{quality_display}[/bold], Preset=[bold]{preset}[/bold]\n")
+    if hw_accel:
+         base = "h265" if codec == "h265" else "h264"
+         ffmpeg_codec_display = f"{base}_videotoolbox (HW)"
+         quality_display = f"Quality ~{int(100 - (crf * 1.5))}"
     else:
-        console.print(f"\n[green]Mode:[/green] [bold]NO COMPRESSION[/bold] (Rename & Timestamp only)\n")
+         ffmpeg_codec_display = "libx265" if codec == "h265" else "libx264"
+         quality_display = f"CRF {crf}"
+         
+    console.print(f"\n[green]Settings:[/green] Codec=[bold]{ffmpeg_codec_display}[/bold], Quality=[bold]{quality_display}[/bold], Preset=[bold]{preset}[/bold]\n")
 
     # 2. Scan Files
     files = [
         f for f in base_dir.iterdir() 
         if f.suffix.lower() in VIDEO_EXTENSIONS and not f.name.startswith('.')
     ]
-
-    # Filter out files that appear to be generated outputs
-    # Logic: If a file looks like "Timestamp_Name.mp4" AND "Name.mp4" exists in "originals", skip it.
-    originals_dir = base_dir / "originals"
-    processed_stems = set()
-    if originals_dir.exists():
-        for orig in originals_dir.iterdir():
-            if not orig.name.startswith('.'):
-                # We need to match the clean stem logic from utils.py
-                processed_stems.add(orig.stem.replace(" ", "_"))
-
-    valid_files = []
-    for f in files:
-        # Check if file matches generated pattern: YYYYMMDD-HHMMSS..._Stem
-        match = re.match(r"^\d{8}-\d{6}.*?_(.+)$", f.stem)
-        is_generated = False
-        if match:
-             potential_stem = match.group(1)
-             if potential_stem in processed_stems:
-                 is_generated = True
-        
-        if not is_generated:
-            valid_files.append(f)
-    
-    files = valid_files
 
     if not files:
         console.print("[yellow]No video files found in directory.[/yellow]")
@@ -156,6 +125,7 @@ def compress_videos(directory, codec, crf, preset, hw_accel, no_compress):
 
     # 4. Processing Loop
     originals_dir = base_dir / "originals"
+    originals_dir.mkdir(exist_ok=True)
     start_time = time.time()
     
     with keep.running() as k, Progress(
@@ -176,61 +146,20 @@ def compress_videos(directory, codec, crf, preset, hw_accel, no_compress):
             
             # Get Dates
             dates = utils.get_file_dates(video_file)
-            new_filename = utils.generate_output_filename(video_file, dates['created'])
-            output_path = base_dir / new_filename
-            
-            if no_compress:
-                try:
-                    progress.update(main_task, description=f"Renaming {video_file.name}")
-                    
-                    if output_path.exists():
-                        # Handle collision or skip?
-                        # If renamed file exists, maybe we already renamed it?
-                        console.print(f"[yellow]Target exists, skipping rename: {new_filename}[/yellow]")
-                        utils.update_file_state(base_dir, video_file.name, 'skipped_exists')
-                        progress.advance(main_task)
-                        continue
 
-                    # Rename
-                    video_file.rename(output_path)
-                    
-                    # Apply Dates
-                    try:
-                        utils.apply_dates_to_file(output_path, dates['created'], dates['created'])
-                    except Exception as e:
-                         console.print(f"[yellow]Warning: Could not set dates for {new_filename}: {e}[/yellow]")
-
-                    # Update state
-                    # Mark original name as done (so we don't process it if it somehow reappears or we track history)
-                    # AND Mark new name as done (so we don't re-rename it on next run)
-                    utils.update_file_state(base_dir, video_file.name, 'renamed')
-                    utils.update_file_state(base_dir, new_filename, 'done')
-                    
-                    console.print(f"[dim]Renamed: {video_file.name} -> {new_filename}[/dim]")
-
-                except Exception as e:
-                    console.print(f"[red]Error renaming {video_file.name}: {e}[/red]")
-                    utils.update_file_state(base_dir, video_file.name, 'error_renaming', str(e))
-                
-                progress.advance(main_task)
-                continue
-
-            # Compress
+            # Compress — use .part temp file to avoid changing the filename
+            temp_output_path = video_file.with_suffix(video_file.suffix + '.part')
             video_duration = 0.0
             process_start_time = time.time()
             
             try:
                 def update_ffmpeg_progress(line):
                     nonlocal video_duration
-                    # Parse Duration if seen (usually at start)
-                    # Duration: 00:00:30.04, start: 0.000000, bitrate: 10453 kb/s
                     if "Duration:" in line and video_duration == 0.0:
                         dur_match = re.search(r"Duration:\s+(\d{2}:\d{2}:\d{2}\.\d{2})", line)
                         if dur_match:
                             video_duration = utils.parse_duration_to_seconds(dur_match.group(1))
 
-                    # Parse interesting metrics from ffmpeg output
-                    # Example: frame=219 fps=0.0 q=-1.0 Lsize=1903kB time=00:00:07.82 bitrate=1991.6kbits/s speed=14.1x
                     time_match = re.search(r"time=(\S+)", line)
                     speed_match = re.search(r"speed=(\S+)", line)
                     
@@ -245,8 +174,8 @@ def compress_videos(directory, codec, crf, preset, hw_accel, no_compress):
 
                 success = compressor.compress_video(
                     video_file, 
-                    output_path, 
-                    codec=codec, # Pass abstract codec directly, compressor handles mapping
+                    temp_output_path, 
+                    codec=codec,
                     crf=crf, 
                     preset=preset,
                     hw_accel=bool(hw_accel),
@@ -259,8 +188,6 @@ def compress_videos(directory, codec, crf, preset, hw_accel, no_compress):
                     stats_msg = f"[dim]Completed in {str(timedelta(seconds=int(process_time)))}[/dim]"
                     
                     if video_duration > 0:
-                        # Efficiency: Time (seconds) to compress 1 minute of video
-                        # (process_time / video_duration_mins)
                         video_minutes = video_duration / 60.0
                         if video_minutes > 0:
                             s_per_min = process_time / video_minutes
@@ -271,42 +198,39 @@ def compress_videos(directory, codec, crf, preset, hw_accel, no_compress):
                     
                     console.print(stats_msg)
 
-                    # Apply Dates
+                    # Apply Dates to the compressed temp file
                     try:
-                        # Use created time for both creation and modification time
-                        utils.apply_dates_to_file(output_path, dates['created'], dates['created'])
+                        utils.apply_dates_to_file(temp_output_path, dates['created'], dates['created'])
                     except Exception as e:
-                        console.print(f"[red]Error applying dates to {new_filename}: {e}[/red]")
+                        console.print(f"[red]Error applying dates to {video_file.name}: {e}[/red]")
                         console.print("[yellow]Rolling back...[/yellow]")
-                        if output_path.exists():
-                            output_path.unlink()
+                        if temp_output_path.exists():
+                            temp_output_path.unlink()
                         utils.update_file_state(base_dir, video_file.name, 'failed_metadata', str(e))
                         continue
 
-                    # Move Original
+                    # Move original to originals/, then rename .part to original name
                     try:
                         utils.move_original(video_file, originals_dir)
+                        temp_output_path.rename(base_dir / video_file.name)
                         utils.update_file_state(base_dir, video_file.name, 'done')
                     except Exception as e:
-                        console.print(f"[red]Error moving original {video_file.name}: {e}[/red]")
+                        console.print(f"[red]Error finalizing {video_file.name}: {e}[/red]")
                         console.print("[yellow]Rolling back... (Deleting compressed file)[/yellow]")
-                        if output_path.exists():
-                            output_path.unlink()
-                        # If original was moved partially? Unlikely with shutil.move but generally it's atomic-ish on same FS.
-                        # If it failed, original should be intact at source or we are in trouble.
-                        # We assume original is still at source if move failed.
+                        if temp_output_path.exists():
+                            temp_output_path.unlink()
                         utils.update_file_state(base_dir, video_file.name, 'failed_move', str(e))
                 else:
                     utils.update_file_state(base_dir, video_file.name, 'failed_compression')
                     console.print(f"[red]Failed to compress {video_file.name}[/red]")
-                    if output_path.exists():
-                        output_path.unlink()
+                    if temp_output_path.exists():
+                        temp_output_path.unlink()
 
             except Exception as e:
                 console.print(f"[red]Unexpected error processing {video_file.name}: {e}[/red]")
-                if output_path.exists():
+                if temp_output_path.exists():
                     try:
-                        output_path.unlink()
+                        temp_output_path.unlink()
                     except:
                         pass
                 utils.update_file_state(base_dir, video_file.name, 'error', str(e))
