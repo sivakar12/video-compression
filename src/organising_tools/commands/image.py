@@ -13,11 +13,11 @@ console = Console()
 
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'} # Add heic support later if needed (requires pillow-heif)
 
-@click.command()
+@click.command('compress-photos')
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True))
 @click.option('--quality', type=int, default=85, help="Quality for JPEG/WebP (1-100). Default 85.")
 @click.option('--dry-run', is_flag=True, help="Simulate compression without changes.")
-def compress_image(directory, quality, dry_run):
+def compress_photos(directory, quality, dry_run):
     """
     Compresses images in the directory.
     Moves originals to 'originals/' folder. Preserves metadata/dates.

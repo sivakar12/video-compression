@@ -17,14 +17,14 @@ console = Console()
 
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm'}
 
-@click.command()
+@click.command('compress-videos')
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True))
 @click.option('--codec', type=click.Choice(['h264', 'h265']), help='Video codec to use')
 @click.option('--crf', type=int, help='Constant Rate Factor (Quality). Lower is better. 18-28 recommended.')
 @click.option('--preset', type=click.Choice(['fast', 'medium', 'slow']), default='medium', help='Compression speed preset')
 @click.option('--hw-accel/--no-hw-accel', default=None, help='Use Hardware Acceleration (VideoToolbox) if available')
 @click.option('--no-compress', is_flag=True, help='Rename and update timestamps ONLY. No compression. Files are NOT moved to originals.')
-def compress(directory, codec, crf, preset, hw_accel, no_compress):
+def compress_videos(directory, codec, crf, preset, hw_accel, no_compress):
     """
     Batch compress videos in DIRECTORY.
     

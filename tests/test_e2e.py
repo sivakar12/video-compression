@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from click.testing import CliRunner
 from organising_tools.commands.dates import add_timestamp_to_filename
-from organising_tools.commands.video import compress
+from organising_tools.commands.video import compress_videos
 
 from organising_tools import utils
 
@@ -39,7 +39,7 @@ def test_organising_tools_e2e_lifecycle(dummy_files_dir):
     
     # 2. COMPRESS phase - processes video
     # Answer 'y' to process files prompt, hardcode optional args to avoid interactive codec prompts
-    compress_result = runner.invoke(compress, [
+    compress_result = runner.invoke(compress_videos, [
         str(dummy_files_dir),
         "--codec", "h264",
         "--crf", "28", 
