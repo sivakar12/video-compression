@@ -152,12 +152,24 @@ def fix_created_dates(directory, dry_run):
 @click.command()
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True))
 @click.option('--dry-run', is_flag=True, help="Show what would happen without applying changes.")
-def add_timestamp_to_filename(directory, dry_run):
+@click.option('--timezone', 'tz_str', default=None, help="Timezone offset for the filename timestamp, e.g. +2, +530, -4.")
+def add_timestamp_to_filename(directory, dry_run, tz_str):
     """
     Renames files to include timestamp prefix (YYYYMMDD-HHMMSS_).
     Preserves existing timestamps in names if present.
     """
     base_dir = Path(directory)
+
+    # Parse timezone if provided
+    tz = None
+    if tz_str is not None:
+        try:
+            tz = utils.parse_timezone_offset(tz_str)
+            console.print(f"[bold]Using timezone offset: {tz}[/bold]")
+        except ValueError as e:
+            console.print(f"[red]Invalid timezone: {e}[/red]")
+            return
+
     console.print(f"[bold blue]Scanning {base_dir} for renaming...[/bold blue]")
     
     files_to_rename = []
@@ -179,9 +191,7 @@ def add_timestamp_to_filename(directory, dry_run):
         dates = utils.get_file_dates(file_path)
         earliest = dates['created']
         
-        # Check if already processed (maybe manually named but doesn't match full pattern?)
-        # Just use the generator
-        new_name = utils.generate_output_filename(file_path, earliest)
+        new_name = utils.generate_output_filename(file_path, earliest, tz=tz)
         
         # Check if name is actually different (ignore case if needed, but usually exact match)
         if new_name != file_path.name:

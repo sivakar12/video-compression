@@ -4,7 +4,7 @@ import shutil
 import platform
 import subprocess
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 import shlex
 import exifread
@@ -123,15 +123,64 @@ def format_date_for_filename(timestamp: float) -> str:
     dt = datetime.fromtimestamp(timestamp)
     return dt.strftime("%Y%m%d-%H%M%S")
 
-def generate_output_filename(original_path: Path, created_ts: float) -> str:
+def parse_timezone_offset(tz_str: str) -> timezone:
     """
-    Generate new filename: YYYYMMDD-HHMMSS[-0700]_{OriginalName}.mp4
+    Parse a shorthand timezone offset string into a timezone object.
+    Examples:
+        '+2'   -> UTC+02:00
+        '+530' -> UTC+05:30
+        '-4'   -> UTC-04:00
+        '+0'   -> UTC+00:00
+        '-930' -> UTC-09:30
     """
-    # Use localized time for filename to include offset if available/relevant
-    dt = datetime.fromtimestamp(created_ts).astimezone()
+    tz_str = tz_str.strip()
+    if not tz_str:
+        raise ValueError("Empty timezone string")
+    
+    # Determine sign
+    if tz_str[0] == '+':
+        sign = 1
+        num_part = tz_str[1:]
+    elif tz_str[0] == '-':
+        sign = -1
+        num_part = tz_str[1:]
+    else:
+        raise ValueError(f"Timezone must start with '+' or '-', got: {tz_str}")
+    
+    if not num_part or not num_part.isdigit():
+        raise ValueError(f"Invalid timezone offset: {tz_str}")
+    
+    # 1-2 digits = hours only, 3-4 digits = hours + minutes
+    if len(num_part) <= 2:
+        hours = int(num_part)
+        minutes = 0
+    elif len(num_part) <= 4:
+        minutes = int(num_part[-2:])
+        hours = int(num_part[:-2])
+    else:
+        raise ValueError(f"Timezone offset too long: {tz_str}")
+    
+    if hours > 14 or minutes >= 60:
+        raise ValueError(f"Timezone offset out of range: {tz_str}")
+    
+    total_minutes = sign * (hours * 60 + minutes)
+    return timezone(timedelta(minutes=total_minutes))
+
+
+def generate_output_filename(original_path: Path, created_ts: float, tz=None) -> str:
+    """
+    Generate new filename: YYYYMMDD-HHMMSS+0530_{OriginalName}.ext
+    
+    If tz is provided (a timezone object), the timestamp is displayed in that timezone.
+    Otherwise, the system local timezone is used.
+    """
+    dt = datetime.fromtimestamp(created_ts, tz=timezone.utc)
+    if tz is not None:
+        dt = dt.astimezone(tz)
+    else:
+        dt = dt.astimezone()  # system local
     date_str = dt.strftime("%Y%m%d-%H%M%S%z")
     stem = original_path.stem
-    # Replace spaces with underscores or keep as is? User didn't specify, keeping safe.
     clean_stem = stem.replace(" ", "_")
     suffix = original_path.suffix
     return f"{date_str}_{clean_stem}{suffix}"
