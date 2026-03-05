@@ -209,7 +209,7 @@ def add_timestamp_to_filename(directory, dry_run, tz_str):
     table.add_column("Current Name", style="red")
     table.add_column("New Name", style="green")
     
-    for item in files_to_rename:
+    for item in sorted(files_to_rename, key=lambda x: x['path'].name):
         table.add_row(item['path'].name, item['new_name'])
         
     console.print(table)
