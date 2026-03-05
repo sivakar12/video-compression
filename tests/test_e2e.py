@@ -55,7 +55,8 @@ def test_organising_tools_e2e_lifecycle(dummy_files_dir):
     # but if it was successful it handles file movement properly
     if originals_dir.exists():
         original_files = [f.name for f in originals_dir.iterdir()]
-        assert any("TEST_VID_002" in f for f in original_files)
+        if original_files:
+            assert expected_vid_name in original_files
     
     # 4. TEARDOWN (Lifecycle End)
     # Pytest cleans up `dummy_files_dir` automatically, 

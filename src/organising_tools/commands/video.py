@@ -147,8 +147,9 @@ def compress_videos(directory, codec, crf, preset, hw_accel):
             # Get Dates
             dates = utils.get_file_dates(video_file)
 
-            # Compress — use .part temp file to avoid changing the filename
-            temp_output_path = video_file.with_suffix(video_file.suffix + '.part')
+            # Compress — output always as .mp4
+            final_name = video_file.stem + '.mp4'
+            temp_output_path = video_file.with_name('.' + final_name)
             video_duration = 0.0
             process_start_time = time.time()
             
@@ -209,10 +210,10 @@ def compress_videos(directory, codec, crf, preset, hw_accel):
                         utils.update_file_state(base_dir, video_file.name, 'failed_metadata', str(e))
                         continue
 
-                    # Move original to originals/, then rename .part to original name
+                    # Move original to originals/, then rename temp to final name
                     try:
                         utils.move_original(video_file, originals_dir)
-                        temp_output_path.rename(base_dir / video_file.name)
+                        temp_output_path.rename(base_dir / final_name)
                         utils.update_file_state(base_dir, video_file.name, 'done')
                     except Exception as e:
                         console.print(f"[red]Error finalizing {video_file.name}: {e}[/red]")
