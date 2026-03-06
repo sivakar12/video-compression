@@ -1,5 +1,5 @@
 import click
-from .commands import video, dates, image, favorites, duplicates
+from .commands import video, dates, image, favorites, duplicates, folder
 
 @click.group()
 def cli():
@@ -14,3 +14,4 @@ cli.add_command(image.compress_photos)
 cli.add_command(favorites.add_folder_to_favourites)
 cli.add_command(favorites.go_to_favourite_folder)
 cli.add_command(duplicates.find_duplicates)
+cli.add_command(folder.group_by_month)
