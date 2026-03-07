@@ -24,6 +24,14 @@ def parse_duration_to_seconds(time_str: str) -> float:
     except ValueError:
         return 0.0
 
+def format_size(size_in_bytes: float) -> str:
+    """Format size in bytes to human readable format."""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size_in_bytes < 1024:
+            return f"{size_in_bytes:.2f} {unit}"
+        size_in_bytes /= 1024
+    return f"{size_in_bytes:.2f} PB"
+
 from PIL import Image, UnidentifiedImageError
 
 def get_metadata_date(file_path: Path) -> Optional[float]:

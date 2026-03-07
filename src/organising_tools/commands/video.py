@@ -127,6 +127,7 @@ def compress_videos(directory, codec, crf, preset, hw_accel):
     originals_dir = base_dir / "originals"
     originals_dir.mkdir(exist_ok=True)
     start_time = time.time()
+    total_size_saved = 0.0
     
     with keep.running() as k, Progress(
         SpinnerColumn(),
@@ -186,7 +187,21 @@ def compress_videos(directory, codec, crf, preset, hw_accel):
                 if success:
                     # Calculate Stats
                     process_time = time.time() - process_start_time
-                    stats_msg = f"[dim]Completed in {str(timedelta(seconds=int(process_time)))}[/dim]"
+
+                    try:
+                        original_size = video_file.stat().st_size
+                        compressed_size = temp_output_path.stat().st_size
+                        size_diff = original_size - compressed_size
+                        total_size_saved += size_diff
+                        
+                        if size_diff > 0:
+                            size_str = f"[dim]• Size: {utils.format_size(original_size)} -> {utils.format_size(compressed_size)}[/dim] [green](-{utils.format_size(size_diff)} saved)[/green]"
+                        else:
+                            size_str = f"[dim]• Size: {utils.format_size(original_size)} -> {utils.format_size(compressed_size)}[/dim] [red](+{utils.format_size(-size_diff)} increased)[/red]"
+                    except Exception:
+                        size_str = "[dim]• Size: Unknown[/dim]"
+
+                    stats_msg = f"[dim]Completed in {str(timedelta(seconds=int(process_time)))}[/dim]\n  {size_str}"
                     
                     if video_duration > 0:
                         video_minutes = video_duration / 60.0
@@ -241,3 +256,8 @@ def compress_videos(directory, codec, crf, preset, hw_accel):
     elapsed_time = time.time() - start_time
     console.print("\n[bold green]Processing Complete![/bold green]")
     console.print(f"[dim]Total time: {str(timedelta(seconds=int(elapsed_time)))}[/dim]")
+    
+    if total_size_saved > 0:
+        console.print(f"[bold green]Total Storage Saved: {utils.format_size(total_size_saved)}[/bold green]")
+    elif total_size_saved < 0:
+        console.print(f"[bold red]Total Storage Increased: {utils.format_size(-total_size_saved)}[/bold red]")
