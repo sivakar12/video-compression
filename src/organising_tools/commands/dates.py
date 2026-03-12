@@ -240,3 +240,93 @@ def add_timestamp_to_filename(directory, dry_run, tz_str):
         console.print(f"[green]Renamed {count} files.[/green]")
     else:
         console.print("[dim]Cancelled.[/dim]")
+
+
+@click.command()
+@click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option('--dry-run', is_flag=True, help="Show what would happen without applying changes.")
+def update_dates_from_filename(directory, dry_run):
+    """
+    Reads the YYYYMMDD-HHMMSS (and optional timezone) timestamp from filenames
+    and updates the file's created and modified dates to match.
+    """
+    base_dir = Path(directory)
+    console.print(f"[bold blue]Scanning {base_dir} to update dates from filenames...[/bold blue]")
+
+    files_to_change = []
+
+    # Regex matches: YYYYMMDD-HHMMSS, optionally followed by +XXXX or -XXXX, then anything
+    pattern = re.compile(r"^(\d{8}-\d{6})([+-]\d{2,4})?.*")
+
+    for file_path in base_dir.iterdir():
+        if file_path.name.startswith('.') or not file_path.is_file():
+            continue
+
+        if file_path.name == utils.STATE_FILE_NAME:
+            continue
+
+        match = pattern.match(file_path.name)
+        if not match:
+            continue
+
+        date_str = match.group(1)
+        tz_str = match.group(2)
+
+        try:
+            # Parse the basic datetime (YYYYMMDD-HHMMSS)
+            dt = datetime.strptime(date_str, "%Y%m%d-%H%M%S")
+
+            if tz_str:
+                # If there's a timezone, parse it and attach to datetime
+                tz = utils.parse_timezone_offset(tz_str)
+                dt = dt.replace(tzinfo=tz)
+                new_ts = dt.timestamp()
+            else:
+                # Assume local time if no timezone is provided
+                dt = dt.astimezone()
+                new_ts = dt.timestamp()
+
+        except ValueError as e:
+            console.print(f"[yellow]Failed to parse date from {file_path.name}: {e}[/yellow]")
+            continue
+
+        dates = utils.get_file_dates(file_path)
+        current_mtime = dates['modified']
+
+        # If the file's current modified date is off by more than 2 seconds, we update it
+        if abs(new_ts - current_mtime) > 2.0:
+            files_to_change.append({
+                'path': file_path,
+                'current': current_mtime,
+                'new': new_ts
+            })
+
+    if not files_to_change:
+        console.print("[green]All files have modified/created dates that match their filename timestamps.[/green]")
+        return
+
+    table = Table(title=f"Proposed Date Updates From Filename ({len(files_to_change)} files)")
+    table.add_column("File", style="cyan")
+    table.add_column("Current Modified Date", style="red")
+    table.add_column("New Date (from filename)", style="green")
+
+    for item in sorted(files_to_change, key=lambda x: x['path'].name):
+        curr_str = datetime.fromtimestamp(item['current']).strftime("%Y-%m-%d %H:%M:%S")
+        new_str = datetime.fromtimestamp(item['new']).strftime("%Y-%m-%d %H:%M:%S")
+        table.add_row(item['path'].name, curr_str, new_str)
+
+    console.print(table)
+
+    if dry_run:
+        console.print("[yellow]Dry run. No changes made.[/yellow]")
+        return
+
+    if Confirm.ask("Apply these changes?"):
+        with console.status("Applying date updates..."):
+            count = 0
+            for item in files_to_change:
+                utils.apply_dates_to_file(item['path'], created=item['new'], modified=item['new'])
+                count += 1
+        console.print(f"[green]Updated dates for {count} files.[/green]")
+    else:
+        console.print("[dim]Cancelled.[/dim]")
