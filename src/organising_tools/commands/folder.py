@@ -32,24 +32,31 @@ def group_by_month(directory, dry_run):
             continue
             
         dates = utils.get_file_dates(file_path)
-        earliest_ts = dates['created']
+        created_ts = dates['created']
+        modified_ts = dates['modified']
         
-        # Get datetime from timestamp
-        dt = datetime.fromtimestamp(earliest_ts)
+        # Get datetime from timestamp (using created time for grouping)
+        dt = datetime.fromtimestamp(created_ts)
         
         # Format folder name as "01 January"
         folder_name = dt.strftime("%m %B")
         target_dir = base_dir / folder_name
         target_path = target_dir / file_path.name
         
+        # Check if created and modified dates differ
+        # (allowing a 2-second margin for filesystem quirks)
+        warning = ""
+        if abs(created_ts - modified_ts) > 2.0:
+            warning = "[yellow]Modified date differs[/yellow]"
+            
         # Only move if not already in the target folder
-        # (Since iterating over base_dir, it's not in target_dir yet, but just to be safe)
         if file_path.parent != target_dir:
             files_to_move.append({
                 'file_path': file_path,
                 'target_dir': target_dir,
                 'target_path': target_path,
-                'folder_name': folder_name
+                'folder_name': folder_name,
+                'warning': warning
             })
             
     if not files_to_move:
@@ -59,9 +66,10 @@ def group_by_month(directory, dry_run):
     table = Table(title=f"Proposed Moves ({len(files_to_move)} files)")
     table.add_column("File", style="cyan")
     table.add_column("Target Folder", style="green")
+    table.add_column("Status", style="yellow")
     
     for item in sorted(files_to_move, key=lambda x: x['file_path'].name):
-        table.add_row(item['file_path'].name, item['folder_name'])
+        table.add_row(item['file_path'].name, item['folder_name'], item['warning'])
         
     console.print(table)
     
