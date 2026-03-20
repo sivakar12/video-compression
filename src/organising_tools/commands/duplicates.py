@@ -1,6 +1,7 @@
 import hashlib
 import click
 from pathlib import Path
+import send2trash
 from collections import defaultdict
 from rich.console import Console
 from rich.table import Table
@@ -88,13 +89,13 @@ def _pick_original(group: list[Path]) -> Path:
 @click.command('find-duplicates')
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True))
 @click.option('--recursive', '-r', is_flag=True, help="Scan subdirectories recursively.")
-@click.option('--dry-run', is_flag=True, help="Report duplicates without deleting anything.")
+@click.option('--dry-run', is_flag=True, help="Report duplicates without moving anything to trash.")
 def find_duplicates(directory, recursive, dry_run):
     """
     Find duplicate files in a directory.
 
     Uses a fast 3-tier algorithm: file size → partial hash → full hash.
-    Offers to delete copies with longer filenames.
+    Offers to move copies with longer filenames to trash.
     """
     base_dir = Path(directory)
 
@@ -139,13 +140,13 @@ def find_duplicates(directory, recursive, dry_run):
         console.print()
 
     if dry_run:
-        console.print("[yellow]Dry run — no files were deleted.[/yellow]")
+        console.print("[yellow]Dry run — no files were moved to trash.[/yellow]")
         return
 
     if not files_to_delete:
         return
 
-    if not Confirm.ask(f"Delete {len(files_to_delete)} duplicate file(s)?"):
+    if not Confirm.ask(f"Move {len(files_to_delete)} duplicate file(s) to trash?"):
         console.print("Aborted.")
         return
 
@@ -154,10 +155,10 @@ def find_duplicates(directory, recursive, dry_run):
     for f in files_to_delete:
         try:
             size = f.stat().st_size
-            f.unlink()
+            send2trash.send2trash(f)
             deleted_count += 1
             freed_bytes += size
         except OSError as e:
-            console.print(f"[red]Error deleting {f}: {e}[/red]")
+            console.print(f"[red]Error moving {f} to trash: {e}[/red]")
 
-    console.print(f"[green]Deleted {deleted_count} file(s), freed {freed_bytes / (1024 * 1024):.2f} MB.[/green]")
+    console.print(f"[green]Moved {deleted_count} file(s) to trash, freed {freed_bytes / (1024 * 1024):.2f} MB.[/green]")

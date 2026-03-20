@@ -14,11 +14,13 @@ dependencies = [
     "wakepy",  # Cross-platform sleep prevention
     "Pillow",  # For image compression
     "exifread",  # For robust EXIF metadata reading (JPEG, HEIC, RAW, etc.)
+    "send2trash", # For moving files to trash natively
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "piexif",
 ]
 
 [project.scripts]

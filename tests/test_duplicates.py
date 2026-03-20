@@ -37,6 +37,7 @@ def test_find_duplicates_detects_groups(duplicates_dir):
     assert "2 duplicate group(s)" in result.output
     assert "3 duplicate file(s)" in result.output
     assert "Dry run" in result.output
+    assert "no files were moved to trash" in result.output
 
 
 def test_find_duplicates_dry_run_keeps_all_files(duplicates_dir):
@@ -54,7 +55,7 @@ def test_find_duplicates_deletes_longer_names(duplicates_dir):
     result = runner.invoke(find_duplicates, [str(duplicates_dir)], input="y\n")
 
     assert result.exit_code == 0
-    assert "Deleted 3 file(s)" in result.output
+    assert "Moved 3 file(s) to trash" in result.output
 
     remaining = sorted(f.name for f in duplicates_dir.iterdir() if f.is_file())
     # Should keep: photo.jpg, doc.txt, unique.dat, notes.md
