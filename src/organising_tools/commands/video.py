@@ -16,6 +16,7 @@ from .. import utils, compressor
 console = Console()
 
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm'}
+MIN_COMPRESSION_FOLD = 3  # Output must be at most 1/3 of the original size
 
 @click.command('compress-videos')
 @click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True))
@@ -107,7 +108,7 @@ def compress_videos(directory, codec, crf, preset, hw_accel):
     skipped_count = 0
     
     for f in files:
-        if f.name in processed_files and processed_files[f.name]['status'] == 'done':
+        if f.name in processed_files and processed_files[f.name]['status'] in ('done', 'skipped_inefficient'):
             skipped_count += 1
         else:
             files_to_process.append(f)
@@ -195,17 +196,24 @@ def compress_videos(directory, codec, crf, preset, hw_accel):
                     try:
                         original_size = video_file.stat().st_size
                         compressed_size = temp_output_path.stat().st_size
+                        
+                        # Efficiency check: must be at least MIN_COMPRESSION_FOLD-fold compression
+                        if compressed_size > (original_size / MIN_COMPRESSION_FOLD):
+                            console.print(f"[yellow]Skipping {video_file.name}: Compression not efficient enough. (Size: {utils.format_size(compressed_size)} vs original {utils.format_size(original_size)} - needed at least {MIN_COMPRESSION_FOLD}x reduction)[/yellow]")
+                            if temp_output_path.exists():
+                                temp_output_path.unlink()
+                            utils.update_file_state(base_dir, video_file.name, 'skipped_inefficient')
+                            progress.advance(main_task)
+                            continue
+
                         size_diff = original_size - compressed_size
                         total_size_saved += size_diff
-                        
-                        if size_diff > 0:
-                            size_str = f"[dim]• Size: {utils.format_size(original_size)} -> {utils.format_size(compressed_size)}[/dim] [green](-{utils.format_size(size_diff)} saved)[/green]"
-                        else:
-                            size_str = f"[dim]• Size: {utils.format_size(original_size)} -> {utils.format_size(compressed_size)}[/dim] [red](+{utils.format_size(-size_diff)} increased)[/red]"
-                    except Exception:
-                        size_str = "[dim]• Size: Unknown[/dim]"
+                        size_str = f"[dim]• Size: {utils.format_size(original_size)} -> {utils.format_size(compressed_size)}[/dim] [green](-{utils.format_size(size_diff)} saved)[/green]"
+                    except Exception as e:
+                        size_str = f"[dim]• Size: Unknown ({e})[/dim]"
 
                     stats_msg = f"[dim]Completed in {str(timedelta(seconds=int(process_time)))}[/dim]\n  {size_str}"
+
                     
                     if video_duration > 0:
                         video_minutes = video_duration / 60.0
