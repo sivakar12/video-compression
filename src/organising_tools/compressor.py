@@ -97,6 +97,8 @@ def compress_video(
     
     cmd.extend([
         "-map_metadata", "0",
+        "-map_metadata:s:v", "0:s:v",
+        "-map_metadata:s:a", "0:s:a",
         "-pix_fmt", "yuv420p",  # Compatibility
         "-c:a", "copy",
         "-movflags", "+faststart+use_metadata_tags",

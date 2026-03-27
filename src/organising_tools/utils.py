@@ -66,26 +66,32 @@ def get_metadata_date(file_path: Path) -> Optional[float]:
             pass
 
     # 2. Videos (FFmpeg)
-    # Using ffprobe to get creation_time tag
+    # Using ffprobe to get creation_time and apple-specific creationdate
     if ext in {'.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm'}:
         try:
             cmd = [
                 "ffprobe", "-v", "quiet", 
-                "-select_streams", "v:0", 
-                "-show_entries", "stream_tags=creation_time:format_tags=creation_time", 
+                "-show_entries", "format_tags=creation_time,com.apple.quicktime.creationdate:stream_tags=creation_time", 
                 "-of", "default=noprint_wrappers=1:nokey=1", 
                 str(file_path)
             ]
             result = subprocess.run(cmd, capture_output=True, text=True)
-            date_str = result.stdout.strip()
-            if date_str:
-                # FFmpeg returns ISO format usually: 2023-01-01T12:00:00.000000Z
+            # ffprobe might return multiple lines if both tags exist
+            date_lines = result.stdout.strip().split('\n')
+            timestamps = []
+            
+            for date_str in date_lines:
+                date_str = date_str.strip()
+                if not date_str: continue
+                
                 try:
-                    # Handle Z or offset
                     dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                    return dt.timestamp()
+                    timestamps.append(dt.timestamp())
                 except ValueError:
-                    pass
+                    continue
+            
+            if timestamps:
+                return min(timestamps)
         except Exception:
             pass
             
@@ -236,23 +242,47 @@ def apply_dates_to_file(file_path: Path, created: float, modified: float):
     Apply original creation and modification dates to the new file.
     """
     # 1. Set atime and mtime
-    os.utime(file_path, (datetime.now().timestamp(), modified))
+    # Use original modification time for mtime. access time can be 'now'
+    os.utime(str(file_path), (datetime.now().timestamp(), modified))
     
-    # 2. Try to set birthtime (macOS specific via setfile if available)
-    if platform.system() == 'Darwin':
+    # 2. Try to set birthtime (macOS specific via SetFile if available)
+    if platform.system() == 'Darwin' and shutil.which("SetFile"):
         try:
             # SetFile expects format "MM/DD/YYYY HH:MM:SS"
-            # It interprets the string in LOCAL time.
-            # We must convert our timestamp to local system string representation.
             dt_local = datetime.fromtimestamp(created)
             date_str = dt_local.strftime("%m/%d/%Y %H:%M:%S")
             
-            subprocess.run(
+            result = subprocess.run(
                 ["SetFile", "-d", date_str, str(file_path)], 
+                check=True, 
+                capture_output=True,
+                text=True
+            )
+            
+            # Also set the modification date in SetFile to be sure Finder sees it
+            subprocess.run(
+                ["SetFile", "-m", date_str, str(file_path)], 
                 check=True, 
                 capture_output=True
             )
         except (subprocess.CalledProcessError, FileNotFoundError):
-            # Command failed or SetFile not found (requires Xcode command line tools)
-            # Fallback is to do nothing for birthtime, as we already set mtime.
             pass
+
+def copy_metadata_tags(source_path: Path, target_path: Path):
+    """
+    Attempt to copy all metadata tags using exiftool if available.
+    This is the gold standard for preserving GPS, camera info, etc.
+    """
+    if shutil.which("exiftool"):
+        try:
+            subprocess.run([
+                "exiftool", 
+                "-tagsFromFile", str(source_path), 
+                "-all:all", 
+                "-overwrite_original", 
+                str(target_path)
+            ], check=True, capture_output=True)
+            return True
+        except subprocess.CalledProcessError:
+            return False
+    return False

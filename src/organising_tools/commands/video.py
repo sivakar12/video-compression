@@ -214,9 +214,12 @@ def compress_videos(directory, codec, crf, preset, hw_accel):
                     
                     console.print(stats_msg)
 
+                    # Apply Internal Metadata Tags (GPS, Model, etc.)
+                    utils.copy_metadata_tags(video_file, temp_output_path)
+
                     # Apply Dates to the compressed temp file
                     try:
-                        utils.apply_dates_to_file(temp_output_path, dates['created'], dates['created'])
+                        utils.apply_dates_to_file(temp_output_path, dates['created'], dates['modified'])
                     except Exception as e:
                         console.print(f"[red]Error applying dates to {video_file.name}: {e}[/red]")
                         console.print("[yellow]Rolling back...[/yellow]")
