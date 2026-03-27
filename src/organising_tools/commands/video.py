@@ -126,6 +126,10 @@ def compress_videos(directory, codec, crf, preset, hw_accel):
     # 4. Processing Loop
     originals_dir = base_dir / "originals"
     originals_dir.mkdir(exist_ok=True)
+    
+    compressed_dir = base_dir / "compressed"
+    compressed_dir.mkdir(exist_ok=True)
+
     start_time = time.time()
     total_size_saved = 0.0
     
@@ -228,10 +232,9 @@ def compress_videos(directory, codec, crf, preset, hw_accel):
                         utils.update_file_state(base_dir, video_file.name, 'failed_metadata', str(e))
                         continue
 
-                    # Move original to originals/, then rename temp to final name
                     try:
                         utils.move_original(video_file, originals_dir)
-                        temp_output_path.rename(base_dir / final_name)
+                        temp_output_path.rename(compressed_dir / final_name)
                         utils.update_file_state(base_dir, video_file.name, 'done')
                     except Exception as e:
                         console.print(f"[red]Error finalizing {video_file.name}: {e}[/red]")
