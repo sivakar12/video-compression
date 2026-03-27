@@ -10,15 +10,12 @@ from .. import utils
 
 console = Console()
 
-@click.command()
-@click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True))
-@click.option('--dry-run', is_flag=True, help="Show what would happen without moving files.")
-def group_by_month(directory, dry_run):
+def _group_files(directory, dry_run, format_str, description):
     """
-    Groups files by their creation month and moves them into folders like '01 January'.
+    Helper function to group files by a datetime format.
     """
     base_dir = Path(directory)
-    console.print(f"[bold blue]Scanning {base_dir} to group files by month...[/bold blue]")
+    console.print(f"[bold blue]Scanning {base_dir} to group files by {description}...[/bold blue]")
     
     files_to_move = []
     
@@ -38,13 +35,12 @@ def group_by_month(directory, dry_run):
         # Get datetime from timestamp (using created time for grouping)
         dt = datetime.fromtimestamp(created_ts)
         
-        # Format folder name as "01 January"
-        folder_name = dt.strftime("%m %B")
+        # Format folder name based on format_str
+        folder_name = dt.strftime(format_str)
         target_dir = base_dir / folder_name
         target_path = target_dir / file_path.name
         
         # Check if created and modified dates differ
-        # (allowing a 2-second margin for filesystem quirks)
         warning = ""
         if abs(created_ts - modified_ts) > 2.0:
             warning = "[yellow]Modified date differs[/yellow]"
@@ -77,7 +73,7 @@ def group_by_month(directory, dry_run):
         console.print("[yellow]Dry run. No files moved.[/yellow]")
         return
         
-    if Confirm.ask("Group these files?"):
+    if Confirm.ask(f"Group these files by {description}?"):
         with console.status("Moving files..."):
             count = 0
             for item in files_to_move:
@@ -90,7 +86,6 @@ def group_by_month(directory, dry_run):
                 
                 # Handle filename collisions
                 if dest_path.exists():
-                    # Append timestamp or simple counter to avoid overwrite
                     base = src.stem
                     ext = src.suffix
                     counter = 1
@@ -107,3 +102,22 @@ def group_by_month(directory, dry_run):
         console.print(f"[green]Successfully moved {count} files.[/green]")
     else:
         console.print("[dim]Cancelled.[/dim]")
+
+@click.command()
+@click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option('--dry-run', is_flag=True, help="Show what would happen without moving files.")
+def group_by_month(directory, dry_run):
+    """
+    Groups files by their creation month and moves them into folders like '01 January'.
+    """
+    _group_files(directory, dry_run, "%m %B", "month")
+
+@click.command()
+@click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option('--dry-run', is_flag=True, help="Show what would happen without moving files.")
+def group_by_year(directory, dry_run):
+    """
+    Groups files by their creation year and moves them into folders like '2023'.
+    """
+    _group_files(directory, dry_run, "%Y", "year")
+
