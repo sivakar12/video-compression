@@ -5,9 +5,27 @@ from pathlib import Path
 from typing import Optional
 
 def check_ffmpeg():
-    """Check if ffmpeg is installed and accessible."""
+    """Check if ffmpeg and ffprobe are installed and accessible."""
     if not shutil.which("ffmpeg"):
         raise RuntimeError("ffmpeg is not installed or not in PATH. Please install it (e.g., 'brew install ffmpeg').")
+    if not shutil.which("ffprobe"):
+        raise RuntimeError("ffprobe is not installed or not in PATH. Please install it (e.g., 'brew install ffmpeg').")
+
+def has_audio_stream(input_path: Path) -> bool:
+    """Check if the input file has at least one audio stream."""
+    try:
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "a",
+            "-show_entries", "stream=index",
+            "-of", "csv=p=0",
+            str(input_path)
+        ]
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
+        return bool(output.strip())
+    except Exception:
+        return False
 
 def compress_video(
     input_path: Path, 
@@ -95,12 +113,27 @@ def compress_video(
     
     cmd.extend(ffmpeg_args)
     
+    # Metadata and format mapping
+    has_audio = has_audio_stream(input_path)
+    
     cmd.extend([
         "-map_metadata", "0",
         "-map_metadata:s:v", "0:s:v",
-        "-map_metadata:s:a", "0:s:a",
+    ])
+    
+    if has_audio:
+        cmd.extend(["-map_metadata:s:a", "0:s:a"])
+        
+    cmd.extend([
         "-pix_fmt", "yuv420p",  # Compatibility
-        "-c:a", "copy",
+    ])
+    
+    if has_audio:
+        cmd.extend(["-c:a", "copy"])
+    else:
+        cmd.extend(["-an"]) # Skip audio if none present
+        
+    cmd.extend([
         "-movflags", "+faststart+use_metadata_tags",
         str(output_path)
     ])
