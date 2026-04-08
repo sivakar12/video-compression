@@ -330,3 +330,116 @@ def update_dates_from_filename(directory, dry_run):
         console.print(f"[green]Updated dates for {count} files.[/green]")
     else:
         console.print("[dim]Cancelled.[/dim]")
+
+
+@click.command()
+@click.argument('directory', type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option('--timezone', 'tz_str', required=True, help="New timezone offset, e.g. +530, -4.")
+@click.option('--timezone-value-only', is_flag=True, help="Only update the timezone string; do not shift the time value.")
+@click.option('--dry-run', is_flag=True, help="Show what would happen without applying changes.")
+def change_filename_timezone(directory, tz_str, timezone_value_only, dry_run):
+    """
+    Changes the timezone of filenames that already have a timestamp prefix.
+    Reads the time from the filename, converts to the new timezone, and renames.
+    """
+    base_dir = Path(directory)
+
+    # Parse target timezone
+    try:
+        new_tz = utils.parse_timezone_offset(tz_str)
+        console.print(f"[bold]Target timezone offset: {new_tz}[/bold]")
+    except ValueError as e:
+        console.print(f"[red]Invalid timezone: {e}[/red]")
+        return
+
+    console.print(f"[bold blue]Scanning {base_dir} for timezone changes...[/bold blue]")
+
+    files_to_change = []
+
+    # Regex matches: YYYYMMDD-HHMMSS (group 1), optionally followed by +XXXX or -XXXX (group 2), then _(group 3)
+    pattern = re.compile(r"^(\d{8}-\d{6})([+-]\d{2,4})?_(.*)")
+
+    for file_path in base_dir.iterdir():
+        if file_path.name.startswith('.') or not file_path.is_file():
+            continue
+
+        if file_path.name == utils.STATE_FILE_NAME:
+            continue
+
+        match = pattern.match(file_path.name)
+        if not match:
+            continue
+
+        date_str = match.group(1)
+        orig_tz_str = match.group(2)
+        rest_of_name = match.group(3)
+
+        try:
+            # Parse the basic datetime (YYYYMMDD-HHMMSS)
+            dt = datetime.strptime(date_str, "%Y%m%d-%H%M%S")
+
+            if timezone_value_only:
+                # Keep the same date/time represented but with the new timezone
+                dt = dt.replace(tzinfo=new_tz)
+                new_ts = dt.timestamp()
+            elif orig_tz_str:
+                tz = utils.parse_timezone_offset(orig_tz_str)
+                dt = dt.replace(tzinfo=tz)
+                new_ts = dt.timestamp()
+            else:
+                # Assume local time if no timezone is provided
+                dt = dt.astimezone()
+                new_ts = dt.timestamp()
+
+        except ValueError as e:
+            console.print(f"[yellow]Failed to parse date from {file_path.name}: {e}[/yellow]")
+            continue
+
+        # Create a fake path for utils.generate_output_filename
+        fake_path = file_path.with_name(rest_of_name)
+        new_name = utils.generate_output_filename(fake_path, new_ts, tz=new_tz)
+
+        if new_name != file_path.name:
+            files_to_change.append({
+                'path': file_path,
+                'new_name': new_name,
+                'new_ts': new_ts
+            })
+
+    if not files_to_change:
+        console.print("[green]No files need timezone changing.[/green]")
+        return
+
+    table = Table(title=f"Proposed Timezone Updates ({len(files_to_change)} files)")
+    table.add_column("Current Name", style="red")
+    table.add_column("New Name", style="green")
+
+    for item in sorted(files_to_change, key=lambda x: x['path'].name):
+        table.add_row(item['path'].name, item['new_name'])
+
+    console.print(table)
+
+    if dry_run:
+        console.print("[yellow]Dry run. No changes made.[/yellow]")
+        return
+
+    if Confirm.ask("Apply these timezone changes?"):
+        with console.status("Applying changes..."):
+            count = 0
+            for item in files_to_change:
+                src = item['path']
+                dest = base_dir / item['new_name']
+                
+                if dest.exists():
+                    console.print(f"[yellow]Skipping {src.name}: Target {dest.name} exists.[/yellow]")
+                    continue
+                
+                try:
+                    src.rename(dest)
+                    count += 1
+                except Exception as e:
+                    console.print(f"[red]Error renaming {src.name}: {e}[/red]")
+                    
+        console.print(f"[green]Updated timezone for {count} files.[/green]")
+    else:
+        console.print("[dim]Cancelled.[/dim]")
