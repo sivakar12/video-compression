@@ -3,7 +3,7 @@ import shutil
 import time
 from pathlib import Path
 from datetime import timedelta
-from PIL import Image
+from PIL import Image, PngImagePlugin
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.prompt import Confirm
@@ -75,27 +75,39 @@ def compress_photos(directory, quality, dry_run):
                 temp_path = base_dir / f".tmp_{img_path.name}"
                 
                 with Image.open(img_path) as img:
-                    # Preserve EXIF
-                    exif_data = img.getexif()
+                    # Capture raw metadata blobs before Pillow closes the file.
+                    # Use img.info['exif'] (raw bytes) rather than img.getexif() so that
+                    # MakerNote and other proprietary tags are preserved verbatim.
+                    raw_exif = img.info.get('exif')
+                    icc_profile = img.info.get('icc_profile')
+                    xmp = img.info.get('xmp')
+                    src_format = img.format  # e.g. 'JPEG', 'PNG', 'WEBP'
+
                     kwargs = {'optimize': True}
-                    
-                    if img.format == 'JPEG':
-                         kwargs['quality'] = quality
-                         if exif_data:
-                             kwargs['exif'] = exif_data
-                    elif img.format == 'PNG':
-                         kwargs['optimize'] = True
-                         # PNG metadata preservation in Pillow is tricky with 'exif' param, 
-                         # usually handles it via info dictionary but optimize might strip chunks.
-                         # explicit exif param works for some formats.
-                         if 'exif' in img.info:
-                             kwargs['exif'] = img.info['exif']
-                    elif img.format == 'WEBP':
-                         kwargs['quality'] = quality
-                         if 'exif' in img.info:
-                             kwargs['exif'] = img.info['exif']
-                    
+                    if raw_exif:
+                        kwargs['exif'] = raw_exif
+                    if icc_profile:
+                        kwargs['icc_profile'] = icc_profile
+                    if xmp:
+                        kwargs['xmp'] = xmp
+
+                    if src_format in ('JPEG',):
+                        kwargs['quality'] = quality
+                    elif src_format == 'WEBP':
+                        kwargs['quality'] = quality
+                    elif src_format == 'PNG':
+                        # Carry over tEXt/iTXt/zTXt text chunks (Author, Copyright, Comment…)
+                        png_info = PngImagePlugin.PngInfo()
+                        for key, val in img.info.items():
+                            if isinstance(key, str) and isinstance(val, str):
+                                png_info.add_text(key, val)
+                        kwargs['pnginfo'] = png_info
+
                     img.save(temp_path, **kwargs)
+
+                # If exiftool is available, copy any metadata Pillow can't carry
+                # (e.g. MakerNote variants, XMP sidecars, exotic chunks).
+                utils.copy_metadata_tags(img_path, temp_path)
                 
                 new_size = temp_path.stat().st_size
                 
@@ -116,7 +128,7 @@ def compress_photos(directory, quality, dry_run):
                 saved_size += (original_size - new_size)
                 
                 # Apply Dates to New File
-                utils.apply_dates_to_file(temp_path, dates['created'], dates['created'])
+                utils.apply_dates_to_file(temp_path, dates['created'], dates['modified'])
                 
                 # Move Original (Copy first to ensure safety, then delete source if needed, or just move)
                 # utils.move_original performs a shutil.move.
